@@ -4,6 +4,7 @@ import os
 import re
 from datetime import datetime
 from dotenv import load_dotenv
+import httpx  # Added for calling the Grok API
 
 load_dotenv()
 
@@ -39,6 +40,8 @@ from telegram.ext import (
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROK_API_KEY = os.getenv("GROK_API_KEY")  # Added Grok API Key
+GROK_MODEL = os.getenv("GROK_MODEL", "grok-2")  # Added Grok Model option
 OWNER_ID = 5081349515
 GROUP_CHAT_ID = -1002359353655
 BATCH_MODE = False
@@ -111,11 +114,11 @@ Generate MCQs from your notes, study material or newspaper articles.
 """
 
 # =========================
-# GEMINI FUNCTION
+# CONTENT GENERATOR
 # =========================
 
 def generate_content(notes: str, mode: str = "upsc", count: int = 2) -> str:
-    print(f">>> Calling Gemini API for mode: {mode}, count: {count}")
+    print(f">>> Preparing prompt for mode: {mode}, count: {count}")
     
     mcq_formats = []
     for i in range(1, count + 1):
@@ -216,7 +219,37 @@ IMPORTANT RULES:
 - The entire question text (excluding options) must be under 280 characters.
 {notes}
 """
-    # Updated API Call for google-genai SDK
+
+    # --- Step 1: Try Grok API ---
+    if GROK_API_KEY:
+        try:
+            print(f">>> Attempting Grok API Call using model: {GROK_MODEL}...")
+            headers = {
+                "Authorization": f"Bearer {GROK_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": GROK_MODEL,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ]
+            }
+            
+            with httpx.Client(timeout=60.0) as http_client:
+                response = http_client.post("https://api.x.ai/v1/chat/completions", headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+                if content:
+                    print(">>> Grok API completed successfully.")
+                    return content
+        except Exception as grok_error:
+            print(f">>> Grok API failed (Limit reached or error): {grok_error}")
+            print(">>> Fallback: Switching to Gemini API...")
+    else:
+        print(">>> GROK_API_KEY is not defined. Defaulting directly to Gemini...")
+
+    # --- Step 2: Fallback to Gemini API if Grok failed or is unavailable ---
     response = ai_client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt
