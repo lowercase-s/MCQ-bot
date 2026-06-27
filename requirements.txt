@@ -1,5 +1,4 @@
-python-telegram-bot
-protobuf
-python-dotenv
+python-telegram-bot[webhooks]>=20.0
+pymongo[srv]>=4.0
 google-generativeai
-pymongo
+python-dotenv
