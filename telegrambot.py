@@ -40,8 +40,8 @@ from telegram.ext import (
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GROK_API_KEY = os.getenv("GROK_API_KEY")  # Added Grok API Key
-GROK_MODEL = os.getenv("GROK_MODEL", "grok-2")  # Added Grok Model option
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")  # rename for clarity
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")  # check console.groq.com for current models
 OWNER_ID = 5081349515
 GROUP_CHAT_ID = -1002359353655
 BATCH_MODE = False
@@ -221,33 +221,36 @@ IMPORTANT RULES:
 """
 
     # --- Step 1: Try Grok API ---
-    if GROK_API_KEY:
-        try:
-            print(f">>> Attempting Grok API Call using model: {GROK_MODEL}...")
-            headers = {
-                "Authorization": f"Bearer {GROK_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": GROK_MODEL,
-                "messages": [
-                    {"role": "user", "content": prompt}
-                ]
-            }
-            
-            with httpx.Client(timeout=60.0) as http_client:
-                response = http_client.post("https://api.x.ai/v1/chat/completions", headers=headers, json=payload)
-                response.raise_for_status()
-                data = response.json()
-                content = data["choices"][0]["message"]["content"]
-                if content:
-                    print(">>> Grok API completed successfully.")
-                    return content
-        except Exception as grok_error:
-            print(f">>> Grok API failed (Limit reached or error): {grok_error}")
-            print(">>> Fallback: Switching to Gemini API...")
-    else:
-        print(">>> GROK_API_KEY is not defined. Defaulting directly to Gemini...")
+    if GROQ_API_KEY:
+    try:
+        print(f">>> Attempting Groq API Call using model: {GROQ_MODEL}...")
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": GROQ_MODEL,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ]
+        }
+
+        with httpx.Client(timeout=60.0) as http_client:
+            response = http_client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers=headers, json=payload
+            )
+            response.raise_for_status()
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            if content:
+                print(">>> Groq API completed successfully.")
+                return content
+    except Exception as groq_error:
+        print(f">>> Groq API failed (Limit reached or error): {groq_error}")
+        print(">>> Fallback: Switching to Gemini API...")
+else:
+    print(">>> GROQ_API_KEY is not defined. Defaulting directly to Gemini...")
 
     # --- Step 2: Fallback to Gemini API if Grok failed or is unavailable ---
     response = ai_client.models.generate_content(
