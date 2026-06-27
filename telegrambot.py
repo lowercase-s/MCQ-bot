@@ -3,9 +3,19 @@ import json
 import os
 import re
 
+
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+from pymongo import MongoClient
+
+MONGO_URI = os.getenv("MONGODB_URI")
+client = MongoClient(MONGO_URI)
+db = client["mcqbot"]
+users_col = db["users"]
+feedback_col = db["feedbacks"]
 
 from datetime import datetime
 
@@ -500,7 +510,8 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "feedback": text,
             "timestamp": datetime.now().isoformat()
         }
-        feedbacks = []
+        feedback_col.insert_one(feedback_entry)
+        
         if os.path.exists("feedback.json"):
             try:
                 with open("feedback.json", "r") as f:
@@ -1171,23 +1182,17 @@ async def process_user_article(notes: str, context: ContextTypes.DEFAULT_TYPE, u
 #==============================
 def load_users():
     global KNOWN_USERS
-
     KNOWN_USERS = {}
-
-    if os.path.exists("users.json"):
-        with open("users.json", "r") as f:
-            users = json.load(f)
-
-            for user in users:
-                KNOWN_USERS[user["id"]] = user
+    for user in users_col.find():
+        KNOWN_USERS[user["id"]] = user
 
 
 def save_users():
-    with open("users.json", "w") as f:
-        json.dump(
-            list(KNOWN_USERS.values()),
-            f,
-            indent=4
+    for user in KNOWN_USERS.values():
+        users_col.update_one(
+            {"id": user["id"]},
+            {"$set": user},
+            upsert=True
         )
 
 # =========================
