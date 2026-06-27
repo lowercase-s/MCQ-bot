@@ -16,7 +16,8 @@ db = client["mcqbot"]
 users_col = db["users"]
 feedback_col = db["feedbacks"]
 
-import google.generativeai as genai
+# Import the new google-genai library
+from google import genai
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
@@ -50,8 +51,9 @@ KNOWN_USERS = {}
 MENU_MESSAGE_ID = {}
 USER_POLL_COUNT = {}
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.5-flash")
+# Set up the new GenAI Client. 
+# We use 'ai_client' because 'client' is already used above for MongoClient.
+ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 #=============
 #WELCOME TEXT
@@ -214,7 +216,11 @@ IMPORTANT RULES:
 - The entire question text (excluding options) must be under 280 characters.
 {notes}
 """
-    response = model.generate_content(prompt)
+    # Updated API Call for google-genai SDK
+    response = ai_client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt
+    )
     return response.text or ""
 
 
