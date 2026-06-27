@@ -2,22 +2,19 @@ import asyncio
 import json
 import os
 import re
-
-
-
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from pymongo import MongoClient
 
+# MongoDB Connection
 MONGO_URI = os.getenv("MONGODB_URI")
 client = MongoClient(MONGO_URI)
 db = client["mcqbot"]
 users_col = db["users"]
 feedback_col = db["feedbacks"]
-
-from datetime import datetime
 
 import google.generativeai as genai
 from telegram import (
@@ -26,7 +23,6 @@ from telegram import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
-
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -35,7 +31,6 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-
 
 # =========================
 # CONFIG
@@ -54,7 +49,6 @@ USER_DAILY_USAGE = {}
 KNOWN_USERS = {}
 MENU_MESSAGE_ID = {}
 USER_POLL_COUNT = {}
-
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
@@ -121,7 +115,6 @@ Generate MCQs from your notes, study material or newspaper articles.
 def generate_content(notes: str, mode: str = "upsc", count: int = 2) -> str:
     print(f">>> Calling Gemini API for mode: {mode}, count: {count}")
     
-    # Dynamically build the expected structure format blocks based on count
     mcq_formats = []
     for i in range(1, count + 1):
         if mode == "upsc":
@@ -284,7 +277,6 @@ def parse_mcq(block: str):
     for line in lines:
         line = line.strip()
 
-        # detect options
         if line.lower().startswith("a.") or line.lower().startswith("a)"):
             reading_question = False
             options.append(("a", line.split(".", 1)[-1].strip()))
@@ -310,7 +302,7 @@ def parse_mcq(block: str):
     return question, options, answer
 
 # =========================
-# MAIN HANDLER
+# MAIN KEYBOARD HANDLERS
 # =========================
 def keyboard_off():
     return ReplyKeyboardMarkup(
@@ -334,7 +326,6 @@ def keyboard_on():
     )
 
 def main_keyboard(is_owner_user_mode=False):
-    """Permanent bottom keyboard."""
     buttons = [
         ["🇮🇳 UPSC Mode", "📝 Quiz Mode"],
         ["❓ Help", "💬 Feedback"]
@@ -365,7 +356,6 @@ def submenu_inline(parent: str):
 
 def poll_count_inline(mode: str):
     keyboard = []
-    # Create 5 rows with 2 options each (1 to 10)
     for i in range(1, 11, 2):
         keyboard.append([
             InlineKeyboardButton(f"{i} Poll", callback_data=f"pollcount_{mode}_{i}"),
@@ -375,7 +365,6 @@ def poll_count_inline(mode: str):
     return InlineKeyboardMarkup(keyboard)
 
 def mode_keyboard():
-    """Bottom keyboard shown after UPSC/Quiz Mode is selected."""
     return ReplyKeyboardMarkup(
         [
             ["📦 Batch Mode (Upto 5 articles)"],
@@ -386,7 +375,6 @@ def mode_keyboard():
     )
 
 def batch_keyboard():
-    """Persistent bottom keyboard during batch collection."""
     return ReplyKeyboardMarkup(
         [
             ["✅ Process Batch"],
@@ -396,7 +384,6 @@ def batch_keyboard():
     )
 
 def feedback_keyboard():
-    """Persistent keyboard during feedback entry."""
     return ReplyKeyboardMarkup(
         [
             ["❌ Cancel"]
@@ -422,7 +409,6 @@ def single_inline():
 
 
 def ensure_user(user_id: int):
-    """Make sure all per-user dicts have sane defaults."""
     if user_id not in USER_MODE:
         USER_MODE[user_id] = "normal"
 
@@ -449,7 +435,6 @@ def ensure_user(user_id: int):
 
 
 async def edit_menu(context: ContextTypes.DEFAULT_TYPE, user_id: int, text: str, markup, parse_mode=None):
-    """Silently update the user's menu message in place. Falls back to a new message if the edit fails."""
     msg_id = MENU_MESSAGE_ID.get(user_id)
 
     if msg_id:
@@ -473,8 +458,8 @@ async def edit_menu(context: ContextTypes.DEFAULT_TYPE, user_id: int, text: str,
     )
     MENU_MESSAGE_ID[user_id] = sent.message_id
 
-async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     user_id = update.effective_user.id
     text = msg.text
@@ -510,17 +495,9 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "feedback": text,
             "timestamp": datetime.now().isoformat()
         }
-        feedback_col.insert_one(feedback_entry)
         
-        if os.path.exists("feedback.json"):
-            try:
-                with open("feedback.json", "r") as f:
-                    feedbacks = json.load(f)
-            except Exception:
-                pass
-        feedbacks.append(feedback_entry)
-        with open("feedback.json", "w") as f:
-            json.dump(feedbacks, f, indent=4)
+        # Saves exclusively to MongoDB Atlas (No local file writing to avoid data loss on container reset)
+        feedback_col.insert_one(feedback_entry)
 
         USER_STATE[user_id] = "owner_user_mode" if is_owner_user else "main"
         await msg.reply_text(
@@ -529,9 +506,6 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # =========================
-    # Bottom keyboard: Help
-    # =========================
     # =========================
     # Bottom keyboard: Help
     # =========================
@@ -565,7 +539,7 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # =========================
-    # Bottom keyboard: Batch / Single / Back (shown after UPSC/Quiz Mode)
+    # Bottom keyboard options
     # =========================
     if text == "📦 Batch Mode (Upto 5 articles)":
         state = USER_STATE.get(user_id, "")
@@ -649,17 +623,12 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if USER_DAILY_USAGE[user_id]["count"] >= 10:
-            await msg.reply_text(
-                "❌ Daily limit reached.\n\nYou can generate only 10 articles per day."
-            )
+            await msg.reply_text("❌ Daily limit reached.\n\nYou can generate only 10 articles per day.")
             return
 
         USER_BATCHES[user_id].append(text)
 
-        remaining = 10 - (
-            USER_DAILY_USAGE[user_id]["count"] +
-            len(USER_BATCHES[user_id])
-        )
+        remaining = 10 - (USER_DAILY_USAGE[user_id]["count"] + len(USER_BATCHES[user_id]))
 
         await msg.reply_text(
             f"📥 Added to batch ({len(USER_BATCHES[user_id])}/5)\n"
@@ -672,14 +641,11 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Single article submitted
     # =========================
     if USER_MODE[user_id] == "single":
-
         state = USER_STATE.get(user_id, "")
         parent = "upsc" if "upsc" in state else "quiz"
 
         if USER_DAILY_USAGE[user_id]["count"] >= 10:
-            await msg.reply_text(
-                "❌ Daily limit reached.\n\nYou can generate only 10 articles per day."
-            )
+            await msg.reply_text("❌ Daily limit reached.\n\nYou can generate only 10 articles per day.")
             return
 
         await process_user_article(text, context, user_id, mode=parent)
@@ -700,8 +666,6 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    # Get the message (works for both new and edited messages)
     msg = update.message or update.edited_message
     if not msg or not msg.text:
         return
@@ -711,25 +675,14 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_owner_user = (user_id == OWNER_ID and USER_STATE.get(user_id) == "owner_user_mode")
 
-# =========================
-# USER MODE (or Owner in User Mode)
-# =========================
     if user_id != OWNER_ID or is_owner_user:
         if user_id == OWNER_ID and msg.text == "👑 God Mode":
             USER_STATE[OWNER_ID] = "main"
-            await msg.reply_text(
-                "Welcome back to Owner Mode!",
-                reply_markup=keyboard_off()
-            )
+            await msg.reply_text("Welcome back to Owner Mode!", reply_markup=keyboard_off())
             return
         await handle_user(update, context)
         return
 
-    # =========================
-    # OWNER MODE
-    # =========================
-
-    # Ignore messages sent by bots (including this bot)
     if update.effective_user.is_bot:
         return
 
@@ -749,12 +702,9 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if msg.text == "📢 Send Updates":
-
         for user in KNOWN_USERS.values():
-
             if user["id"] == OWNER_ID:
                 continue
-
             try:
                 await context.bot.send_message(
                     chat_id=user["id"],
@@ -768,83 +718,50 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print(f"Couldn't send update to {user['id']}: {e}")
 
         await msg.reply_text("✅ Updates sent to all users.")
-
         return
 
-    # Toggle Batch Mode
     if msg.text == "📦 Batch Mode: ON":
         BATCH_MODE = True
         OWNER_QUEUE.clear()
-
-        await msg.reply_text(
-            "Batch Mode ON\n\nSend your articles.",
-            reply_markup=keyboard_on()
-        )
+        await msg.reply_text("Batch Mode ON\n\nSend your articles.", reply_markup=keyboard_on())
         return
 
     if msg.text == "📦 Batch Mode: OFF":
         BATCH_MODE = False
-
         if not OWNER_QUEUE:
-            await msg.reply_text(
-                "No articles were added.\n\nBatch mode is now OFF.",
-                reply_markup=keyboard_off()
-            )
+            await msg.reply_text("No articles were added.\n\nBatch mode is now OFF.", reply_markup=keyboard_off())
             return
-        await msg.reply_text(
-            f"🚀 Processing {len(OWNER_QUEUE)} article(s)...",
-
-        )
+        await msg.reply_text(f"🚀 Processing {len(OWNER_QUEUE)} article(s)...")
 
         for article in OWNER_QUEUE:
             await process_article(article, context)
 
         OWNER_QUEUE.clear()
-
-        await msg.reply_text(
-            "Batch completed!",
-            reply_markup=keyboard_off()
-        )
-
+        await msg.reply_text("Batch completed!", reply_markup=keyboard_off())
         return
 
-    # Don't process articles unless Batch Mode is ON
     if not BATCH_MODE:
-        await msg.reply_text(
-            "❌ Batch Mode is OFF.\nPress '📦 Batch Mode: ON' first."
-        )
+        await msg.reply_text("❌ Batch Mode is OFF.\nPress '📦 Batch Mode: ON' first.")
         return
+        
     OWNER_QUEUE.append(msg.text)
+    await msg.reply_text(f"📥 Added to batch ({len(OWNER_QUEUE)} article(s))")
 
-    await msg.reply_text(
-        f"📥 Added to batch ({len(OWNER_QUEUE)} article(s))"
-    )
-
-    return
-
-
-from telegram import ReplyKeyboardMarkup
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-
-    USER_STATE[user_id] = "main"   # ✅ correct here
+    USER_STATE[user_id] = "main"
 
     user = update.effective_user
-
     KNOWN_USERS[user.id] = {
         "id": user.id,
         "username": user.username,
         "first_name": user.first_name
     }
-
     save_users()
 
     if user.id == OWNER_ID:
-        await update.message.reply_text(
-            "Welcome!",
-            reply_markup=keyboard_off()
-        )
+        await update.message.reply_text("Welcome!", reply_markup=keyboard_off())
         return
 
     sent = await update.message.reply_text(
@@ -854,10 +771,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     MENU_MESSAGE_ID[user_id] = sent.message_id
 
-    await update.message.reply_text(
-        "👇 Use the buttons below to choose a mode.",
-        reply_markup=main_keyboard()
-    )
+    await update.message.reply_text("👇 Use the buttons below to choose a mode.", reply_markup=main_keyboard())
 
 
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -871,66 +785,38 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     MENU_MESSAGE_ID[user_id] = query.message.message_id
     is_owner_user = (user_id == OWNER_ID and USER_STATE.get(user_id) == "owner_user_mode")
 
-    # =========================
-    # Help / Back to welcome
-    # =========================
     if data == "help":
         USER_STATE[user_id] = "help"
-        await query.edit_message_text(
-            HELP_TEXT,
-            parse_mode="HTML",
-            reply_markup=help_inline()
-        )
+        await query.edit_message_text(HELP_TEXT, parse_mode="HTML", reply_markup=help_inline())
         return
 
     if data == "back_main":
         USER_STATE[user_id] = "owner_user_mode" if is_owner_user else "main"
         USER_MODE[user_id] = "normal"
-        await query.edit_message_text(
-            WELCOME_TEXT,
-            parse_mode="HTML",
-            reply_markup=welcome_inline()
-        )
+        await query.edit_message_text(WELCOME_TEXT, parse_mode="HTML", reply_markup=welcome_inline())
         return
 
-    # =========================
-    # UPSC / Quiz Mode chosen via inline button (e.g. from a future entry point)
-    # =========================
     if data in ("upsc", "quiz"):
         USER_STATE[user_id] = f"owner_user_mode_{data}" if is_owner_user else data
         label = "🇮🇳 UPSC Mode" if data == "upsc" else "📝 Quiz Mode"
-        await query.edit_message_text(
-            f"{label} selected\n\nChoose option:",
-            reply_markup=submenu_inline(data)
-        )
+        await query.edit_message_text(f"{label} selected\n\nChoose option:", reply_markup=submenu_inline(data))
         return
 
-    # =========================
-    # Back to the UPSC/Quiz submenu
-    # =========================
     if data == "back_submenu":
         state = USER_STATE.get(user_id, "")
         parent = "upsc" if "upsc" in state else "quiz"
         label = "🇮🇳 UPSC Mode" if parent == "upsc" else "📝 Quiz Mode"
         USER_STATE[user_id] = f"owner_user_mode_{parent}" if is_owner_user else parent
         USER_MODE[user_id] = "normal"
-        await query.edit_message_text(
-            f"{label} selected\n\nChoose option:",
-            reply_markup=submenu_inline(parent)
-        )
+        await query.edit_message_text(f"{label} selected\n\nChoose option:", reply_markup=submenu_inline(parent))
         return
 
-    # =========================
-    # Batch Mode selected
-    # =========================
     if data in ("upsc_batch", "quiz_batch"):
         parent = data.split("_")[0]
         USER_STATE[user_id] = f"{parent}_batch"
         USER_MODE[user_id] = "batch"
         USER_BATCHES[user_id] = []
-        await query.edit_message_text(
-            "✅ Batch Mode ON\n\nSend up to 5 articles, then tap '✅ Process Batch'."
-        )
+        await query.edit_message_text("✅ Batch Mode ON\n\nSend up to 5 articles, then tap '✅ Process Batch'.")
         await context.bot.send_message(
             chat_id=user_id,
             text="Use the buttons below to control the batch:",
@@ -938,9 +824,6 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # =========================
-    # Single Article Mode (Upto 10 polls) selected
-    # =========================
     if data in ("upsc_single", "quiz_single"):
         parent = data.split("_")[0]
         USER_STATE[user_id] = f"{parent}_poll_select"
@@ -950,9 +833,6 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # =========================
-    # Poll Count chosen (e.g. pollcount_upsc_5)
-    # =========================
     if data.startswith("pollcount_"):
         parts = data.split("_")
         parent = parts[1]
@@ -968,13 +848,9 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # =========================
-    # Process the batch
-    # =========================
     if data == "process_batch":
         state = USER_STATE.get(user_id, "")
         parent = "upsc" if "upsc" in state else "quiz"
-
         count = len(USER_BATCHES.get(user_id, []))
 
         if count == 0:
@@ -982,11 +858,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         USER_MODE[user_id] = "normal"
-
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=f"🚀 Processing {count} article(s)..."
-        )
+        await context.bot.send_message(chat_id=user_id, text=f"🚀 Processing {count} article(s)...")
 
         for article in USER_BATCHES[user_id]:
             await process_user_article(article, context, user_id, mode=parent)
@@ -998,49 +870,26 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_STATE[user_id] = "owner_user_mode" if is_owner_user else "main"
 
         await query.edit_message_text(f"✅ Batch completed!")
-
         await context.bot.send_message(
             chat_id=user_id,
-            text=(
-                f"📊 Today's usage: {USER_DAILY_USAGE[user_id]['count']}/10 articles\n"
-                f"📌 Remaining today: {remaining}\n\n"
-                f"Choose option:"
-            ),
+            text=f"📊 Today's usage: {USER_DAILY_USAGE[user_id]['count']}/10 articles\n📌 Remaining today: {remaining}\n\nChoose option:",
             reply_markup=main_keyboard(is_owner_user_mode=is_owner_user)
         )
         return
 
-    # =========================
-    # Cancel everything
-    # =========================
     if data == "cancel_all":
         USER_MODE[user_id] = "normal"
         USER_STATE[user_id] = "owner_user_mode" if is_owner_user else "main"
         USER_BATCHES[user_id] = []
-
         await query.edit_message_text("❌ Cancelled.")
-
-        await context.bot.send_message(
-            chat_id=user_id,
-            text="Choose option:",
-            reply_markup=main_keyboard(is_owner_user_mode=is_owner_user)
-        )
+        await context.bot.send_message(chat_id=user_id, text="Choose option:", reply_markup=main_keyboard(is_owner_user_mode=is_owner_user))
         return
 
 
 async def process_article(notes: str, context: ContextTypes.DEFAULT_TYPE):
-    processing = await context.bot.send_message(
-        chat_id=OWNER_ID,
-        text="Processing..."
-    )
+    processing = await context.bot.send_message(chat_id=OWNER_ID, text="Processing...")
     try:
-        # Default Owner group updates to 2 UPSC questions
         result = await asyncio.to_thread(generate_content, notes, "upsc", 2)
-
-        # =========================
-        # SPLIT OUTPUT
-        # =========================
-
         result = result.replace("\r", "")
 
         title = ""
@@ -1069,27 +918,16 @@ async def process_article(notes: str, context: ContextTypes.DEFAULT_TYPE):
             print("Parsing error:", e)
             print("RAW OUTPUT:\n", result)
 
-        # =========================
-        # SEND SUMMARY
-        # =========================
-
         await context.bot.send_message(
             chat_id=GROUP_CHAT_ID,
             text=f"📰 <b>The news:</b> {title}\n\n<tg-spoiler>{summary}</tg-spoiler>",
             parse_mode="HTML"
         )
 
-        # =========================
         # MCQ 1
-        # =========================
-
         q1, opt1, ans1 = parse_mcq(mcq1_block)
-
-        # Telegram limit
         q1 = q1[:300]
-
         options_text = [o[1][:100] for o in opt1]
-
         correct_index = next((i for i, o in enumerate(opt1) if o[0] == ans1), 0)
 
         await context.bot.send_poll(
@@ -1101,17 +939,10 @@ async def process_article(notes: str, context: ContextTypes.DEFAULT_TYPE):
             correct_option_id=correct_index
         )
 
-        # =========================
         # MCQ 2
-        # =========================
-
         q2, opt2, ans2 = parse_mcq(mcq2_block)
-
-        # Telegram limit
         q2 = q2[:300]
-
         options_text2 = [o[1][:100] for o in opt2]
-
         correct_index2 = next((i for i, o in enumerate(opt2) if o[0] == ans2), 0)
 
         await context.bot.send_poll(
@@ -1128,21 +959,13 @@ async def process_article(notes: str, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await processing.edit_text(f"❌ Error: {e}")
 
-#===========================
-#Article processing for user
-#===========================
-async def process_user_article(notes: str, context: ContextTypes.DEFAULT_TYPE, user_id: int, mode: str = "upsc"):
-    await context.bot.send_message(
-        chat_id=user_id,
-        text="⏳ Processing article..."
-    )
 
+async def process_user_article(notes: str, context: ContextTypes.DEFAULT_TYPE, user_id: int, mode: str = "upsc"):
+    await context.bot.send_message(chat_id=user_id, text="⏳ Processing article...")
     ensure_user(user_id)
     count = USER_POLL_COUNT.get(user_id, 2)
 
-    # Generate with Gemini using specific mode and dynamic count
     result = await asyncio.to_thread(generate_content, notes, mode, count)
-
     result = result.replace("\r", "")
 
     if "SUMMARY:" in result:
@@ -1150,14 +973,12 @@ async def process_user_article(notes: str, context: ContextTypes.DEFAULT_TYPE, u
     else:
         rest = result
 
-    # Robust regex splitting by "MCQ\d+:"
     blocks = re.split(r'(?i)MCQ\d+\s*:', rest)
-    mcq_blocks = blocks[1:][:count]  # Filter the generated blocks up to the selected count
+    mcq_blocks = blocks[1:][:count]
 
     sent_any = False
     for idx, block in enumerate(mcq_blocks):
         q, opt, ans = parse_mcq(block)
-        
         if not q or not opt:
             continue
 
@@ -1172,14 +993,12 @@ async def process_user_article(notes: str, context: ContextTypes.DEFAULT_TYPE, u
         sent_any = True
 
     if not sent_any:
-        await context.bot.send_message(
-            chat_id=user_id,
-            text="❌ Could not parse any questions. Please try again with simpler text."
-        )
+        await context.bot.send_message(chat_id=user_id, text="❌ Could not parse any questions. Please try again with simpler text.")
 
-#===============================
-#JSON FILE for storing user data
-#==============================
+
+#===========================
+# JSON MIGRATION & USER SYNC
+#===========================
 def load_users():
     global KNOWN_USERS
     KNOWN_USERS = {}
@@ -1195,11 +1014,69 @@ def save_users():
             upsert=True
         )
 
+
+def migrate_json_data():
+    """Migrates users.json and feedbacks.json to MongoDB Atlas on startup if they exist."""
+    # 1. Migrate users.json
+    if os.path.exists("users.json"):
+        print("[MIGRATION] Found users.json. Syncing with MongoDB...")
+        try:
+            with open("users.json", "r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            count = 0
+            if isinstance(data, dict):
+                for uid_str, user_details in data.items():
+                    try:
+                        uid = int(uid_str)
+                        user_details["id"] = uid
+                        users_col.update_one({"id": uid}, {"$set": user_details}, upsert=True)
+                        count += 1
+                    except ValueError:
+                        pass
+            elif isinstance(data, list):
+                for user_details in data:
+                    uid = user_details.get("id")
+                    if uid:
+                        users_col.update_one({"id": int(uid)}, {"$set": user_details}, upsert=True)
+                        count += 1
+            print(f"[MIGRATION] Successfully moved {count} users to MongoDB!")
+            os.rename("users.json", "users.json.migrated") # Prevent re-running next startup
+        except Exception as e:
+            print(f"[MIGRATION ERROR] Failed to migrate users.json: {e}")
+
+    # 2. Migrate feedbacks.json (or feedback.json)
+    for fb_file in ["feedbacks.json", "feedback.json"]:
+        if os.path.exists(fb_file):
+            print(f"[MIGRATION] Found {fb_file}. Syncing with MongoDB...")
+            try:
+                with open(fb_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                count = 0
+                if isinstance(data, list):
+                    for fb_entry in data:
+                        # Prevent duplicate entry creation
+                        exists = feedback_col.find_one({
+                            "user_id": fb_entry.get("user_id"),
+                            "feedback": fb_entry.get("feedback"),
+                            "timestamp": fb_entry.get("timestamp")
+                        })
+                        if not exists:
+                            feedback_col.insert_one(fb_entry)
+                            count += 1
+                print(f"[MIGRATION] Successfully moved {count} feedbacks from {fb_file} to MongoDB!")
+                os.rename(fb_file, f"{fb_file}.migrated")
+            except Exception as e:
+                print(f"[MIGRATION ERROR] Failed to migrate {fb_file}: {e}")
+
 # =========================
-# MAIN
+# MAIN (WEBHOOK & POLLING AUTO-SWITCH)
 # =========================
 
 def main():
+    # Attempt to migrate any uploaded JSON data first
+    migrate_json_data()
 
     load_users()
 
@@ -1208,13 +1085,27 @@ def main():
     app.add_handler(CommandHandler("getid", getid))
     app.add_handler(CommandHandler("begin", begin))
     app.add_handler(CallbackQueryHandler(menu_callback))
-    app.add_handler(
-    MessageHandler(filters.TEXT & ~filters.COMMAND, receive_notes)
-)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_notes))
     app.add_handler(CommandHandler("start", start))
 
-    print("Bot running...")
-    app.run_polling()
+    # Port configured automatically via Render’s environment configuration
+    PORT = int(os.environ.get("PORT", 8000))
+    WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL") # Injected automatically by Render
+
+    if WEBHOOK_URL:
+        # WEBHOOK MODE: Runs on Render
+        WEBHOOK_URL = WEBHOOK_URL.rstrip('/')
+        print(f"Starting bot in Webhook mode on port {PORT} with URL {WEBHOOK_URL}/{BOT_TOKEN}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=BOT_TOKEN,
+            webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
+        )
+    else:
+        # POLLING MODE: Safe fallback for local offline testing
+        print("Starting bot in Polling mode...")
+        app.run_polling()
 
 
 if __name__ == "__main__":
