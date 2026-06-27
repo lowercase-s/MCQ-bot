@@ -2,3 +2,4 @@ python-telegram-bot
 protobuf
 python-dotenv
 google-generativeai
+pymongo
