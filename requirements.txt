@@ -2,4 +2,5 @@ python-telegram-bot[webhooks]>=20.0
 pymongo[srv]>=4.0
 google-genai
 python-dotenv
-httpx
+groq>=0.4.0
+
