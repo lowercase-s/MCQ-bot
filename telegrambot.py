@@ -43,7 +43,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")  # rename for clarity
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")  # check console.groq.com for current models
 OWNER_ID = 5081349515
-GROUP_CHAT_ID = -1002359353655
+GROUP_CHAT_ID = os.getenv("CHAT_ID")
 BATCH_MODE = False
 OWNER_QUEUE = []
 USER_BATCHES = {}
@@ -303,6 +303,24 @@ async def begin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
 
+async def send_sunday_update_func(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+
+    msg = (
+        "📢 <b>Sunday Update</b>\n\n"
+        "Today is <b>Sunday</b>, so there will be <b>no questions or quizzes</b> today.\n\n"
+        "Take the day to relax, revise what you've already learned, or simply enjoy your weekend.\n\n"
+        "New questions will resume tomorrow. Have a great Sunday! 🌿"
+    )
+
+    await context.bot.send_message(
+        chat_id=GROUP_CHAT_ID,
+        text=msg,
+        parse_mode="HTML"
+    )
+
+
 # =========================
 # MCQ PARSER
 # =========================
@@ -351,7 +369,8 @@ def keyboard_off():
         [
             ["📦 Batch Mode: ON"],
             ["📢 Send Updates", "⚙️ Settings"],
-            ["📅 Send daily update to group", "👤 User Mode"],
+            ["📅 Send daily update to group", "Send sunday update"],
+            ["👤 User Mode"],
         ],
         resize_keyboard=True,
     )
@@ -362,7 +381,8 @@ def keyboard_on():
         [
             ["📦 Batch Mode: OFF"],
             ["📢 Send Updates", "⚙️ Settings"],
-            ["📅 Send daily update to group", "👤 User Mode"],
+            ["📅 Send daily update to group", "Send sunday update"],
+            ["👤 User Mode"],
         ],
         resize_keyboard=True,
     )
@@ -741,6 +761,11 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if msg.text == "📅 Send daily update to group":
         await begin(update, context)
         await msg.reply_text("✅ Daily update sent to the group.")
+        return
+
+    if msg.text == "Send sunday update":
+        await send_sunday_update_func(update, context)
+        await msg.reply_text("✅ Sunday update sent to the group.")
         return
 
     if msg.text == "📢 Send Updates":
