@@ -159,65 +159,74 @@ ANSWER: <correct option a/b/c/d>
         prompt = f"""
 You are an expert UPSC Prelims question setter.
 
-From the given current affairs notes, generate exactly {count} multiple-choice questions in the STRICT format below.
+You will be provided with a text, article, or general topic. 
+CRITICAL RULE FOR SHORT INPUTS: If the provided input is extremely short (such as a single word or generic topic like 'Mars'), leverage your vast internal pre-trained knowledge base to craft challenging, standard, and highly educational UPSC Prelims-level questions about the topic. Do not restrict yourself to only the words in the input.
+
+From this topic/notes, generate exactly {count} multiple-choice questions in the STRICT format below.
 
 Rules:
-- No explanations
-- No markdown
-- No extra text outside format
-- Keep options SHORT (max 12–15 words each)
-- Focus on factual accuracy and elimination-based questions
-- Questions must be UPSC Prelims level (statement-based, tricky but factual)
+- No explanations, no markdown, no extra text outside the format.
+- Focus on high-level factual density, analytical traps, and elimination-based structures.
+- CRITICAL - QUESTION FRAMING: Do NOT write telegraphic, compressed, note-taking, or stubby phrases (e.g., 'largest Mars volcano', 'First Mars Rover', 'Mars distance from the sun'). Instead, write fully realized, grammatically perfect, and formal complete sentences. 
+  * Example of BAD framing: "largest Mars volcano" or "Mars atmosphere gas"
+  * Example of GOOD framing: "With reference to Martian geology, consider the following statements:" or "With reference to the geological features of the solar system, consider the following statements about Olympus Mons:"
+- Keep options SHORT (max 12–15 words each; standard UPSC answers like "Statement 1 only").
+- Keep statements concise but highly factual, standard, and deep.
 
 FORMAT:
 
 TITLE: <short headline>
 
 SUMMARY:
-<Detailed concise summary from the article from UPSC POV. Don't make it too long>
+<Detailed concise summary from the article or general topic from a UPSC POV. Don't make it too long>
 
 {format_str}
 
 IMPORTANT RULES:
 - Generate EXACTLY {count} MCQs (from MCQ1 to MCQ{count}).
-- Keep statements factual and UPSC-level tricky
-- Avoid long sentences in options
-- Do not repeat same answer pattern
+- Keep statements factual, standard, and UPSC-level tricky.
+- Do not repeat the same answer pattern or the same facts across multiple questions.
 - Ensure each MCQ block is clearly separated by a blank line.
-IMPORTANT:
-- The ENTIRE poll question (including statements and "Which of the above...") must be under 280 characters.
+- The ENTIRE poll question text (including statements and "Which of the above...") must be strictly under 250 characters (Telegram limit). Ensure complete, elegant sentences that safely fit this limit.
 - Maximum 2 statements per question.
-- Each statement under 60 characters.
+- Each statement must be concise but rich in specific information (e.g., numerical facts, geographical names, names of missions/treaties).
+
 {notes}
 """
     else:
         prompt = f"""
-You are an expert quiz question setter.
+You are an expert quiz question setter specializing in high-level trivia, academic, and competitive exams.
 
-From the given notes, generate exactly {count} multiple-choice questions in the STRICT format below.
+You will be provided with a text, article, or general topic. 
+CRITICAL RULE FOR SHORT INPUTS: If the provided input is extremely short (such as a single word or generic topic like 'Mars'), leverage your vast internal pre-trained knowledge base to craft challenging, standard, and highly educational quiz questions about the topic. Do not restrict yourself to only the words in the input.
+
+From this topic/notes, generate exactly {count} multiple-choice questions in the STRICT format below.
 
 Rules:
-- No explanations
-- No markdown
-- No extra text outside format
-- Keep question and options SHORT (options max 12–15 words each)
-- Generate standard 4-option multiple choice questions based on the notes
+- No explanations, no markdown, no extra text outside format.
+- Keep options SHORT (options max 10–12 words each)
+- Generate standard 4-option multiple choice questions.
+- CRITICAL - QUESTION FRAMING: Do NOT write telegraphic, compressed, note-taking, or stubby phrases (e.g., 'largest Mars volcano', 'First Mars Rover', 'Mars distance from the sun'). Instead, write fully realized, grammatically perfect, and formal complete sentences. 
+  * Example of BAD framing: "largest Mars volcano" or "Mars atmosphere gas"
+  * Example of GOOD framing: "What is the name of the largest volcano in the solar system, which is located on Mars?" or "The 'Martian year' (the time it takes Mars to orbit the Sun) is approximately how many Earth days?" or "Which mission was the first to successfully land a rover on the surface of Mars?"
+- Do not use statement-based logic (like "Consider the following statements" or "Statement 1 only") in this mode.
 
 FORMAT:
 
 TITLE: <short headline>
 
 SUMMARY:
-<Detailed concise summary from the article. Don't make it too long>
+<Detailed concise summary from the article or general topic. Don't make it too long>
 
 {format_str}
 
 IMPORTANT RULES:
 - Generate EXACTLY {count} MCQs (from MCQ1 to MCQ{count}).
-- Keep questions factual and clear
-- Do not use statement-based logic (like "Consider the following statements" or "Statement 1 only")
+- Keep questions factual, clear, informative, and challenging.
+- Do not repeat same concepts or patterns across different questions.
 - Ensure each MCQ block is clearly separated by a blank line.
-- The entire question text (excluding options) must be under 280 characters.
+- The entire question text (excluding options) must be strictly under 250 characters (Telegram limit) to prevent truncation, but it MUST be a complete, elegant, and grammatically correct sentence.
+
 {notes}
 """
 
@@ -1061,7 +1070,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_MODE[user_id] = "single"
 
         await query.edit_message_text(
-            f"📄 Single Topic ({count} polls selected).\n\nSend one article to generate {count} questions.",
+            f"📄 Single Topic ({count} MCQs).\n\nSend your notes or type the topic name to generate questions.",
             reply_markup=single_inline()
         )
         await context.bot.send_message(
