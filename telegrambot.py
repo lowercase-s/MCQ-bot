@@ -63,15 +63,15 @@ ai_client = genai.Client(api_key=GEMINI_API_KEY)
 #=============
 WELCOME_TEXT = """👋 <b>Welcome to the MCQ Bot!</b>
 
-Generate multiple-choice questions from any article, notes, or study material.
+Provide any <b>topic</b>, <b>article</b>, <b>notes</b>, or <b>study material</b>, and I'll generate an MCQ test for you.
 
 📚 <b>Available Modes</b>
 
-🇮🇳 <b>UPSC Mode</b>
-• Generates statement-based questions in the UPSC Prelims style.
+📋 <b>Statement Mode</b>
+• Generates statement-based MCQs in the UPSC Prelims style.
 
 📝 <b>Quiz Mode</b>
-• Generates standard four-option multiple-choice questions.
+• Basic 4 options quiz based MCQs.
 
 ❓ Tap <b>Help</b> to learn how to use the bot and view the usage limits.
 """
@@ -82,28 +82,28 @@ Generate multiple-choice questions from any article, notes, or study material.
 HELP_TEXT = """
 ❓ <b>MCQ Bot Help</b>
 
-Generate MCQs from your notes, study material or newspaper articles.
+This bot can generate MCQs from any <b>topic</b>, <b>notes</b>, <b>study material</b> or <b>newspaper article</b> that you provide.
 
 <b>📚 Modes</b>
 
-<b>🇮🇳 UPSC Mode</b>
-• Statement-based questions in the UPSC Prelims style.
+<b>📋 Statement Mode</b>
+• This will generate statement-based MCQs in the UPSC Prelims style.
 
 <b>📝 Quiz Mode</b>
 • Standard 4 options MCQs.
 
 <b>⚙️ Generation Options</b>
 
-<b>📄 Single Article</b>
-• Generate <b>1–10 polls</b> from a single article/note.
+<b>📄 Single Topic</b>
+• Generate <b>1–10 MCQs</b> from a single topic/article/note that you provide.
 
-<b>📦 Batch Mode</b>
-• Queue up to <b>5 articles/notes</b> and generate MCQs together.
+<b>📦 Multiple Topics</b>
+• Send up to <b>5 topics/articles/notes</b> and generate 5-10 MCQs at once.
 
 <b>⚠️ Limits</b>
 
-• <b>10 articles for 1 user/day</b> (resets at midnight).
-• Maximum <b>5 articles</b> per batch.
+• <b>10 topics/notes/articles for 1 user/day</b> (resets at midnight).
+• Maximum <b>5 topics/notes/articles</b> at once.
 
 <b>💡 Tips</b>
 
@@ -368,8 +368,7 @@ def keyboard_off():
     return ReplyKeyboardMarkup(
         [
             ["📦 Batch Mode: ON"],
-            ["📢 Send Updates", "⚙️ Settings"],
-            ["📅 Send daily update to group", "Send sunday update"],
+            ["📢 Updates", "⚙️ Settings"],
             ["👤 User Mode"],
         ],
         resize_keyboard=True,
@@ -380,16 +379,25 @@ def keyboard_on():
     return ReplyKeyboardMarkup(
         [
             ["📦 Batch Mode: OFF"],
-            ["📢 Send Updates", "⚙️ Settings"],
-            ["📅 Send daily update to group", "Send sunday update"],
+            ["📢 Updates", "⚙️ Settings"],
             ["👤 User Mode"],
+        ],
+        resize_keyboard=True,
+    )
+
+def updates_keyboard():
+    return ReplyKeyboardMarkup(
+        [
+            ["📢 Send Updates", "📅 Send daily update to group"],
+            ["Send sunday update", "✍️ Custom updates"],
+            ["⬅️ Back"]
         ],
         resize_keyboard=True,
     )
 
 def main_keyboard(is_owner_user_mode=False):
     buttons = [
-        ["🇮🇳 UPSC Mode", "📝 Quiz Mode"],
+        ["📋 Statement Mode", "📝 Quiz Mode"],
         ["❓ Help", "💬 Feedback"]
     ]
     if is_owner_user_mode:
@@ -411,26 +419,24 @@ def help_inline():
 
 def submenu_inline(parent: str):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📦 Batch Mode (Upto 5 articles)", callback_data=f"{parent}_batch")],
-        [InlineKeyboardButton("📄 Single Article Mode (Upto 10 polls)", callback_data=f"{parent}_single")],
+        [InlineKeyboardButton("📦 Multiple Topics (Upto 5 topics)", callback_data=f"{parent}_batch")],
+        [InlineKeyboardButton("📄 Single Topic", callback_data=f"{parent}_single")],
         [InlineKeyboardButton("⬅️ Back", callback_data="back_main")]
     ])
 
 def poll_count_inline(mode: str):
-    keyboard = []
-    for i in range(1, 11, 2):
-        keyboard.append([
-            InlineKeyboardButton(f"{i} Poll", callback_data=f"pollcount_{mode}_{i}"),
-            InlineKeyboardButton(f"{i+1} Polls", callback_data=f"pollcount_{mode}_{i+1}")
-        ])
-    keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="back_submenu")])
-    return InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("5", callback_data=f"pollcount_{mode}_5"),
+            InlineKeyboardButton("10", callback_data=f"pollcount_{mode}_10")
+        ]
+    ])
 
 def mode_keyboard():
     return ReplyKeyboardMarkup(
         [
-            ["📦 Batch Mode (Upto 5 articles)"],
-            ["📄 Single Article Mode (Upto 10 polls)"],
+            ["📦 Multiple Topics (Upto 5 topics)"],
+            ["📄 Single Topic"],
             ["⬅️ Back"],
         ],
         resize_keyboard=True
@@ -440,6 +446,14 @@ def batch_keyboard():
     return ReplyKeyboardMarkup(
         [
             ["✅ Process Batch"],
+            ["❌ Cancel"]
+        ],
+        resize_keyboard=True
+    )
+
+def single_keyboard():
+    return ReplyKeyboardMarkup(
+        [
             ["❌ Cancel"]
         ],
         resize_keyboard=True
@@ -569,6 +583,19 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # =========================
+    # Global Cancel Handler (for Single/Batch/Poll-Select/etc.)
+    # =========================
+    if text == "❌ Cancel":
+        USER_MODE[user_id] = "normal"
+        USER_STATE[user_id] = "owner_user_mode" if is_owner_user else "main"
+        USER_BATCHES[user_id] = []
+        await msg.reply_text(
+            "❌ Cancelled.",
+            reply_markup=main_keyboard(is_owner_user_mode=is_owner_user)
+        )
+        return
+
+    # =========================
     # Bottom keyboard: Help
     # =========================
     if text == "❓ Help":
@@ -584,10 +611,10 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # =========================
     # Bottom keyboard: UPSC / Quiz Mode
     # =========================
-    if text == "🇮🇳 UPSC Mode":
+    if text == "📋 Statement Mode":
         USER_STATE[user_id] = "upsc"
         await msg.reply_text(
-            "🇮🇳 UPSC Mode selected\n\nChoose option:",
+            "📋 Statement Mode selected\n\nChoose option:",
             reply_markup=mode_keyboard()
         )
         return
@@ -603,29 +630,33 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # =========================
     # Bottom keyboard options
     # =========================
-    if text == "📦 Batch Mode (Upto 5 articles)":
+    if text == "📦 Multiple Topics (Upto 5 topics)":
         state = USER_STATE.get(user_id, "")
         parent = "upsc" if "upsc" in state else "quiz"
         USER_STATE[user_id] = f"{parent}_batch"
         USER_MODE[user_id] = "batch"
         USER_BATCHES[user_id] = []
         await msg.reply_text(
-            "✅ Batch Mode selected\n\nSend up to 5 articles, then tap '✅ Process Batch'.",
+            "✅ Multiple Topics selected\n\nSend up to 5 topics/notes/articles, then tap '✅ Process Batch'.",
             reply_markup=batch_keyboard()
         )
         return
 
-    if text == "📄 Single Article Mode (Upto 10 polls)":
+    if text == "📄 Single Topic":
         state = USER_STATE.get(user_id, "")
         parent = "upsc" if "upsc" in state else "quiz"
         USER_STATE[user_id] = f"{parent}_poll_select"
         await msg.reply_text(
-            "🔢 How many polls (questions) would you like to generate? (Select from 1 to 10)",
+            "📄 Single Topic Mode",
+            reply_markup=single_keyboard()
+        )
+        await msg.reply_text(
+            "🔢 How many MCQs would you like to generate?",
             reply_markup=poll_count_inline(parent)
         )
         return
 
-    if text == "⬅️ Back":
+    if text == "⬅️ Back" and USER_MODE[user_id] != "single":
         USER_MODE[user_id] = "normal"
         USER_STATE[user_id] = "owner_user_mode" if is_owner_user else "main"
         USER_BATCHES[user_id] = []
@@ -706,6 +737,24 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state = USER_STATE.get(user_id, "")
         parent = "upsc" if "upsc" in state else "quiz"
 
+        if text == "❌ Cancel":
+            USER_MODE[user_id] = "normal"
+            USER_STATE[user_id] = "owner_user_mode" if is_owner_user else "main"
+            await msg.reply_text(
+                "❌ Cancelled.",
+                reply_markup=main_keyboard(is_owner_user_mode=is_owner_user)
+            )
+            return
+
+        if text == "⬅️ Back":
+            USER_MODE[user_id] = "normal"
+            USER_STATE[user_id] = f"owner_user_mode_{parent}" if is_owner_user else parent
+            await msg.reply_text(
+                "Returned to selection:",
+                reply_markup=mode_keyboard()
+            )
+            return
+
         if USER_DAILY_USAGE[user_id]["count"] >= 10:
             await msg.reply_text("❌ Daily limit reached.\n\nYou can generate only 10 articles per day.")
             return
@@ -750,12 +799,60 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     global BATCH_MODE, OWNER_QUEUE, USER_BATCHES, USER_MODE
 
+    # =========================
+    # Owner Custom Updates Handler
+    # =========================
+    if USER_STATE.get(OWNER_ID) == "owner_custom_update":
+        if msg.text == "❌ Cancel":
+            USER_STATE[OWNER_ID] = "main"
+            await msg.reply_text("Custom update cancelled.", reply_markup=updates_keyboard())
+            return
+
+        broadcast_text = msg.text
+        success_count = 0
+        fail_count = 0
+
+        # Broadcast custom update to all known users
+        for user in KNOWN_USERS.values():
+            if user["id"] == OWNER_ID:
+                continue
+            try:
+                await context.bot.send_message(
+                    chat_id=user["id"],
+                    text=broadcast_text,
+                    parse_mode="HTML"
+                )
+                success_count += 1
+            except Exception as e:
+                print(f"Couldn't send custom update to {user['id']}: {e}")
+                fail_count += 1
+
+        USER_STATE[OWNER_ID] = "main"
+        await msg.reply_text(
+            f"✅ Broadcast completed!\n\n"
+            f"Sent successfully to: {success_count} users\n"
+            f"Failed: {fail_count} users",
+            reply_markup=updates_keyboard()
+        )
+        return
+
+    # =========================
+    # Owner Menu Actions
+    # =========================
     if msg.text == "👤 User Mode":
         USER_STATE[OWNER_ID] = "owner_user_mode"
         await msg.reply_text(
             "Switched to User Mode. You can now use the bot like a normal user.",
             reply_markup=main_keyboard(is_owner_user_mode=True)
         )
+        return
+
+    if msg.text in ("📢 Updates", "Updates"):
+        await msg.reply_text("Choose an update action:", reply_markup=updates_keyboard())
+        return
+
+    if msg.text == "⬅️ Back":
+        await msg.reply_text("Returned to Owner Panel.", reply_markup=keyboard_on() if BATCH_MODE else keyboard_off())
         return
 
     if msg.text == "📅 Send daily update to group":
@@ -785,6 +882,14 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print(f"Couldn't send update to {user['id']}: {e}")
 
         await msg.reply_text("✅ Updates sent to all users.")
+        return
+
+    if msg.text in ("Custom updates", "✍️ Custom updates"):
+        USER_STATE[OWNER_ID] = "owner_custom_update"
+        await msg.reply_text(
+            "Please send the custom message you want to broadcast to all users.\n\nType ❌ Cancel to cancel.",
+            reply_markup=feedback_keyboard()
+        )
         return
 
     if msg.text == "📦 Batch Mode: ON":
@@ -838,7 +943,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     MENU_MESSAGE_ID[user_id] = sent.message_id
 
-    await update.message.reply_text("👇 Use the buttons below to choose a mode.", reply_markup=main_keyboard())
+    
 
 
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -865,14 +970,14 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data in ("upsc", "quiz"):
         USER_STATE[user_id] = f"owner_user_mode_{data}" if is_owner_user else data
-        label = "🇮🇳 UPSC Mode" if data == "upsc" else "📝 Quiz Mode"
+        label = "📋 Statement Mode" if data == "upsc" else "📝 Quiz Mode"
         await query.edit_message_text(f"{label} selected\n\nChoose option:", reply_markup=submenu_inline(data))
         return
 
     if data == "back_submenu":
         state = USER_STATE.get(user_id, "")
         parent = "upsc" if "upsc" in state else "quiz"
-        label = "🇮🇳 UPSC Mode" if parent == "upsc" else "📝 Quiz Mode"
+        label = "📋 Statement Mode" if parent == "upsc" else "📝 Quiz Mode"
         USER_STATE[user_id] = f"owner_user_mode_{parent}" if is_owner_user else parent
         USER_MODE[user_id] = "normal"
         await query.edit_message_text(f"{label} selected\n\nChoose option:", reply_markup=submenu_inline(parent))
@@ -895,8 +1000,14 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parent = data.split("_")[0]
         USER_STATE[user_id] = f"{parent}_poll_select"
         await query.edit_message_text(
-            "🔢 How many polls (questions) would you like to generate? (Select from 1 to 10)",
+            "🔢 How many MCQs would you like to generate?",
             reply_markup=poll_count_inline(parent)
+        )
+        # Update reply keyboard to only have Cancel button
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="📄 Single Topic Mode selected.",
+            reply_markup=single_keyboard()
         )
         return
 
@@ -910,8 +1021,13 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_MODE[user_id] = "single"
 
         await query.edit_message_text(
-            f"📄 Single Article Mode (Upto 10 polls) ({count} polls selected).\n\nSend one article to generate {count} questions.",
+            f"📄 Single Topic ({count} polls selected).\n\nSend one article to generate {count} questions.",
             reply_markup=single_inline()
+        )
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="Please send your article/topic now. Use the button below to cancel.",
+            reply_markup=single_keyboard()
         )
         return
 
