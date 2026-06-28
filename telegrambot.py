@@ -24,6 +24,7 @@ from telegram import (
     ReplyKeyboardMarkup,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    ReplyKeyboardRemove,
 )
 from telegram.ext import (
     ApplicationBuilder,
@@ -812,16 +813,30 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success_count = 0
         fail_count = 0
 
-        # Broadcast custom update to all known users
+        # Broadcast custom update to all known users with a forced layout reset sequence
         for user in KNOWN_USERS.values():
             if user["id"] == OWNER_ID:
                 continue
             try:
+                # 1. Force remove old cached keyboard
+                temp_msg = await context.bot.send_message(
+                    chat_id=user["id"],
+                    text="🔄 Updating menu layout...",
+                    reply_markup=ReplyKeyboardRemove()
+                )
+                # 2. Deliver custom update text and push the new keyboard markup
                 await context.bot.send_message(
                     chat_id=user["id"],
                     text=broadcast_text,
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    reply_markup=main_keyboard()
                 )
+                # 3. Silently delete the temporary status message to keep the chat tidy
+                try:
+                    await context.bot.delete_message(chat_id=user["id"], message_id=temp_msg.message_id)
+                except Exception as e:
+                    print(f"Failed to delete custom broadcast temp message for {user['id']}: {e}")
+                
                 success_count += 1
             except Exception as e:
                 print(f"Couldn't send custom update to {user['id']}: {e}")
@@ -870,6 +885,13 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if user["id"] == OWNER_ID:
                 continue
             try:
+                # 1. Force remove old cached keyboard
+                temp_msg = await context.bot.send_message(
+                    chat_id=user["id"],
+                    text="🔄 Updating menu layout...",
+                    reply_markup=ReplyKeyboardRemove()
+                )
+                # 2. Push notification with the updated keyboard layout
                 await context.bot.send_message(
                     chat_id=user["id"],
                     text=(
@@ -878,6 +900,11 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     ),
                     reply_markup=main_keyboard()
                 )
+                # 3. Silently delete the temporary status message to keep the chat tidy
+                try:
+                    await context.bot.delete_message(chat_id=user["id"], message_id=temp_msg.message_id)
+                except Exception as e:
+                    print(f"Failed to delete broadcast temp message for {user['id']}: {e}")
             except Exception as e:
                 print(f"Couldn't send update to {user['id']}: {e}")
 
@@ -936,12 +963,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Welcome!", reply_markup=keyboard_off())
         return
 
+    # 1. Force Telegram client to discard old keyboard cache on user's device
+    temp_msg = await update.message.reply_text(
+        "🔄 Syncing main menu interface...",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+    # 2. Render welcome text and draw fresh, updated keyboard buttons
     sent = await update.message.reply_text(
         WELCOME_TEXT,
         parse_mode="HTML",
-        reply_markup=welcome_inline()
+        reply_markup=main_keyboard()
     )
     MENU_MESSAGE_ID[user_id] = sent.message_id
+
+    # 3. Silently delete the temporary status message to keep the chat history tidy
+    try:
+        await context.bot.delete_message(chat_id=user_id, message_id=temp_msg.message_id)
+    except Exception as e:
+        print("Failed to delete temp message in start:", e)
 
     
 
