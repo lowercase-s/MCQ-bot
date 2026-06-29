@@ -75,55 +75,67 @@ ai_client = genai.Client(api_key=GEMINI_API_KEY)
 #=============
 #WELCOME TEXT
 #=============
-WELCOME_TEXT = """👋 <b>Welcome to the MCQ Bot!</b>
+WELCOME_TEXT = """<b>👋 Welcome to the MCQ Bot!</b>
 
-Provide any <b>topic</b>, <b>article</b>, <b>notes</b>, or <b>study material</b>, and I'll generate an MCQ test for you.
+Generate <b>AI-powered MCQs</b> from your notes or practice by subject all in one place.
 
-📚 <b>Available Modes</b>
+✨ <b>Features</b>
 
-📋 <b>Statement Based MCQs</b>
-• Generates statement-based MCQs in the UPSC Prelims style.
+📄 <b>Generate MCQs</b>
+Generate MCQs from notes, articles & PDFs.
 
-📝 <b>Regular MCQs</b>
-• Basic 4 options quiz based MCQs.
+📖 <b>Subject-wise Quiz</b>
+Practice from multiple subjects with 10 MCQs at once.
 
-❓ Tap <b>Help</b> to learn how to use the bot and view the usage limits.
+🎯 <b>Daily Challenge</b>
+Take one challenge every day and maintain your streak.
+
+🏆 <b>Leaderboard</b>
+Earn points and compete with other users.
+
+🏅 <b>My Score</b>
+Track your points, accuracy, rank, and streaks.
+
+❓ Tap <b>Help</b> to learn more.
+
+Happy Learning! 📚🚀
 """
 
 #============
 #HELP TEXT
 #===========
 HELP_TEXT = """
-❓ <b>MCQ Bot Help</b>
+<b>❓ Help</b>
 
-This bot can generate MCQs from any <b>topic</b>, <b>notes</b>, <b>study material</b> or <b>newspaper article</b> that you provide.
+<b>📄 Generate MCQs</b>
+Upload any topic, notes, articles to generate MCQs.
 
-<b>📚 Modes</b>
+<b>📖 Subject-wise Quiz</b>
+Practice 10 MCQs at once:
+• 🇮🇳 Indian History
+• 🦏 Assam History
+• 🌍 World History
+• 🏛 Polity
+• 🌍 Geography
+• 💰 Economy
+• 🧪 Science
+• 🌿 Environment
+• 🎨 Art & Culture
+• 🌐 International Relations
+• 🖥️ Current Affairs
+• 🦏 Assam Specific
 
-<b>📋 Statement Based MCQs</b>
-• This will generate statement-based MCQs in the UPSC Prelims style.
+<b>🎯 Daily Challenge</b>
+Complete one 10-question challenge every day to build your streak.
 
-<b>📝 Regular MCQs</b>
-• Standard 4 options MCQs.
+<b>🏆 Leaderboard</b>
+Earn points for every correct answer and climb the rankings.
 
-<b>⚙️ Generation Options</b>
+<b>🏅 My Score</b>
+View your points, accuracy, leaderboard rank, daily challenges completed, and streaks.
 
-<b>📄 Single Topic</b>
-• Generate <b>1–10 MCQs</b> from a single topic/article/note that you provide.
+Good luck with your preparation! 📚✨
 
-<b>📦 Multiple Topics</b>
-• Send up to <b>5 topics/articles/notes</b> and generate 5-10 MCQs at once.
-
-<b>⚠️ Limits</b>
-
-• <b>10 topics/notes/articles for 1 user/day</b> (resets at midnight).
-• Maximum <b>5 topics/notes/articles</b> at once.
-
-<b>💡 Tips</b>
-
-• Use one topic per article for the best results.
-• Remove unnecessary links or headers before sending.
-• Split long documents into smaller sections for better-quality questions.
 
 """
 
