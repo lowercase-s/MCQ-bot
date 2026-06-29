@@ -178,7 +178,14 @@ FORMAT:
 TITLE: <short headline>
 
 SUMMARY:
-<Detailed concise summary from the article or general topic from a UPSC POV. Don't make it too long>
+<Write a single, highly dense, continuous paragraph (approximately 100–120 words) summarizing the topic from a strict UPSC perspective. Do NOT use bullet points, sub-headers, or lists. It must seamlessly integrate:
+1. Core definition and context (what it is, launch year, target group/objectives).
+2. Functional details, mechanisms, or associated global/national initiatives.
+3. Key factual milestones (important dates, agency/WHO declarations, or critical statistics).
+4. Current relevance or future significance.
+
+Example of the target summary format:
+"National Immunisation Day (NID), or Pulse Polio Immunisation Day, is a nationwide campaign launched in 1995 to eradicate polio by administering two drops of Oral Polio Vaccine (OPV) to all children below five years, irrespective of their vaccination status. It is part of the Global Polio Eradication Initiative (1988) and involves booth-based vaccination, door-to-door campaigns, transit vaccination, and Acute Flaccid Paralysis (AFP) surveillance. India reported its last wild polio case in 2011 and was declared polio-free by the WHO in 2014. NID remains crucial for maintaining India's polio-free status through high immunisation coverage and continuous surveillance.">
 
 {format_str}
 
@@ -216,7 +223,10 @@ FORMAT:
 TITLE: <short headline>
 
 SUMMARY:
-<Detailed concise summary from the article or general topic. Don't make it too long>
+<Write a single, highly dense, continuous paragraph (approximately 80–100 words) summarizing the core topic. Do NOT use bullet points, sub-headers, or lists. It must seamlessly integrate:
+1. Main definition or core theme of the notes.
+2. Essential factual details or mechanisms.
+3. Broad significance or current status.>
 
 {format_str}
 
