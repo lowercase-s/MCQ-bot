@@ -9,6 +9,7 @@ import httpx  # Added for calling the Grok API
 load_dotenv()
 
 from pymongo import MongoClient
+from bson import ObjectId
 
 # MongoDB Connection
 MONGO_URI = os.getenv("MONGODB_URI")
@@ -18,6 +19,8 @@ users_col = db["users"]
 feedback_col = db["feedbacks"]
 leaderboard_col = db["leaderboard"]  # Leaderboard collection
 polls_col = db["polls"]              # Tracks correct options for non-anonymous quizzes
+broadcast_logs_col = db["broadcast_logs"]
+
 
 # Import the new google-genai library
 from google import genai
@@ -217,7 +220,7 @@ def generate_content(notes: str, mode: str = "upsc", count: int = 2, user_id: in
     subject_rule = ""
     if "Assam Specific" in clean_subject:
         subject_rule = (
-            "SUBJECT CONSTRAINTS: Generate challenging, standard, and highly educational questions "
+            "SUBJECT CONSTRAINTS: Generate challenging, standard, and highly educational questions from UPSC perspective"
             "strictly focused on Assam Specific topics. Ensure a balanced, diverse mix covering:\n"
             "1. Latest Assam current affairs (incorporate current 2026 data),\n"
             "2. Assam government schemes,\n"
@@ -233,14 +236,14 @@ def generate_content(notes: str, mode: str = "upsc", count: int = 2, user_id: in
         )
     elif "Daily Challenge Mix" in clean_subject:
         subject_rule = (
-            "SUBJECT CONSTRAINTS: Generate a perfectly balanced, diverse mix of questions "
+            "SUBJECT CONSTRAINTS: Generate a perfectly balanced, diverse mix of questions from UPSC point of view"
             "covering multiple different subject categories such as History, Polity, Geography, "
             "Economics, Science & Tech, Environment, Art & Culture, International Relations, and Current Affairs."
         )
     elif clean_subject in SUBJECT_LIST_CLEAN:
-        subject_rule = f"SUBJECT CONSTRAINTS: Generate questions ONLY from the selected subject category '{clean_subject}'."
+        subject_rule = f"SUBJECT CONSTRAINTS: Generate questions ONLY from the selected subject category from UPSC point of view'{clean_subject}'."
         if "Current Affairs" in clean_subject:
-            subject_rule += f" Ensure all news, policies, events, and reports are from the most recent months leading up to {current_date_str}. Do not use old historical current affairs."
+            subject_rule += f" Ensure all news, policies, events, and reports are from the most recent months leading up to {current_date_str} from UPSC perspective. Do not use old historical current affairs."
     
     # Prevent repeating questions already completed by the user
     past_questions_str = "None"
@@ -1352,7 +1355,45 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await msg.reply_text("Use the buttons below 👇")
 
+async def delete_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
 
+    reply = update.message.reply_to_message
+    if not reply or "Broadcast ID:" not in reply.text:
+        await update.message.reply_text(
+            "Reply to the broadcast confirmation message."
+        )
+        return
+
+    match = re.search(r"Broadcast ID: ([a-f0-9]{24})", reply.text)
+    if not match:
+        await update.message.reply_text("Broadcast ID not found.")
+        return
+
+    b_id = ObjectId(match.group(1))
+
+    logs = list(broadcast_logs_col.find({"broadcast_id": b_id}))
+
+    deleted = 0
+
+    for log in logs:
+        try:
+            await context.bot.delete_message(
+                chat_id=log["user_id"],
+                message_id=log["message_id"]
+            )
+            deleted += 1
+        except:
+            pass
+
+        await asyncio.sleep(0.05)
+
+    broadcast_logs_col.delete_many({"broadcast_id": b_id})
+
+    await update.message.reply_text(
+        f"✅ Deleted {deleted} broadcast messages."
+    )
 async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.edited_message
     if not msg or not msg.text:
@@ -1435,41 +1476,55 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         fail_count = 0
 
         # Broadcast custom update to all known users with a forced layout reset sequence
+        b_id = ObjectId()
+
         for user in KNOWN_USERS.values():
             if user["id"] == OWNER_ID:
                 continue
+
             try:
-                # 1. Force remove old cached keyboard
                 temp_msg = await context.bot.send_message(
                     chat_id=user["id"],
                     text="🔄 Updating menu layout...",
                     reply_markup=ReplyKeyboardRemove()
                 )
-                # 2. Deliver custom update text and push the new keyboard markup
-                await context.bot.send_message(
+
+                sent = await context.bot.send_message(
                     chat_id=user["id"],
                     text=broadcast_text,
                     parse_mode="HTML",
                     reply_markup=main_keyboard()
                 )
-                # 3. Silently delete the temporary status message to keep the chat tidy
+
+                broadcast_logs_col.insert_one({
+                    "broadcast_id": b_id,
+                    "user_id": user["id"],
+                    "message_id": sent.message_id
+                })
+
                 try:
-                    await context.bot.delete_message(chat_id=user["id"], message_id=temp_msg.message_id)
-                except Exception as e:
-                    print(f"Failed to delete custom broadcast temp message for {user['id']}: {e}")
-                
+                    await context.bot.delete_message(
+                        chat_id=user["id"],
+                        message_id=temp_msg.message_id
+                    )
+                except:
+                    pass
+
                 success_count += 1
+
             except Exception as e:
-                print(f"Couldn't send custom update to {user['id']}: {e}")
+                print(e)
                 fail_count += 1
 
         USER_STATE[OWNER_ID] = "main"
         await msg.reply_text(
             f"✅ Broadcast completed!\n\n"
+            f"Broadcast ID: {b_id}\n\n"
             f"Sent successfully to: {success_count} users\n"
             f"Failed: {fail_count} users",
             reply_markup=updates_keyboard()
-        )
+)
+        
         return
 
     # =========================
@@ -1788,6 +1843,7 @@ def main():
 
     app.add_handler(CommandHandler("getid", getid))
     app.add_handler(CommandHandler("begin", begin))
+    app.add_handler(CommandHandler("delete", delete_broadcast))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
     app.add_handler(PollAnswerHandler(handle_poll_answer))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_notes))
