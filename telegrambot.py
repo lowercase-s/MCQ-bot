@@ -138,8 +138,6 @@ Earn points for every correct answer and climb the rankings.
 View your points, accuracy, leaderboard rank, daily challenges completed, and streaks.
 
 Good luck with your preparation! 📚✨
-
-
 """
 
 # =========================
@@ -754,7 +752,7 @@ def mode_keyboard():
             ["📄 Single Topic"],
             ["⬅️ Back"],
         ],
-        resize_keyboard=True
+        resize_keyboard=True,
     )
 
 def batch_keyboard():
@@ -763,7 +761,7 @@ def batch_keyboard():
             ["✅ Process Batch"],
             ["❌ Cancel"]
         ],
-        resize_keyboard=True
+        resize_keyboard=True,
     )
 
 def single_keyboard():
@@ -771,7 +769,7 @@ def single_keyboard():
         [
             ["❌ Cancel"]
         ],
-        resize_keyboard=True
+        resize_keyboard=True,
     )
 
 def feedback_keyboard():
@@ -779,7 +777,7 @@ def feedback_keyboard():
         [
             ["❌ Cancel"]
         ],
-        resize_keyboard=True
+        resize_keyboard=True,
     )
 
 def cancel_inline():
@@ -1143,7 +1141,7 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "timestamp": datetime.now().isoformat()
         }
         
-        # Saves exclusively to MongoDB Atlas (No local file writing to avoid data loss on container reset)
+        # Saves exclusively to MongoDB Atlas
         feedback_col.insert_one(feedback_entry)
 
         USER_STATE[user_id] = "owner_user_mode" if is_owner_user else "main"
@@ -1394,6 +1392,7 @@ async def delete_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"✅ Deleted {deleted} broadcast messages."
     )
+
 async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.edited_message
     if not msg or not msg.text:
@@ -1420,11 +1419,14 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global BATCH_MODE, OWNER_QUEUE, USER_BATCHES, USER_MODE
 
     # =========================
-# Owner Batch Mode: Send Daily MCQs
-# =========================
+    # Owner Batch Mode: Send Daily MCQs
+    # =========================
     if USER_STATE.get(OWNER_ID) == "owner_batch":
         if msg.text == "❌ Cancel":
-            # ... (rest of your existing cancel code)
+            BATCH_MODE = False
+            OWNER_QUEUE.clear()
+            USER_STATE[OWNER_ID] = "main"
+            await msg.reply_text("Process cancelled.", reply_markup=owner_main_keyboard())
             return
 
         if msg.text == "✅ Process & Post MCQs":
@@ -1437,13 +1439,10 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Step 1: Send Daily Header
             await send_daily_banner(context)
             
-            # Step 2: Process batch articles sequentially
+            # Step 2: Process batch articles sequentially and deliver both news (headline + summary) and polls
             await processing_msg.edit_text(f"🚀 Processing {len(OWNER_QUEUE)} article(s) and posting polls...")
             
             for idx, article in enumerate(OWNER_QUEUE, start=1):
-                # --- FIX HERE ---
-                # Pass GROUP_CHAT_ID (or OWNER_ID if you intended to test first) 
-                # and the mode. Assuming you want to post to the Group:
                 await process_user_article(article, context, user_id=int(GROUP_CHAT_ID), mode="upsc")
 
             # Cleanup
@@ -1453,8 +1452,6 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await processing_msg.edit_text("✅ Daily Update and associated MCQs have been published successfully!")
             await msg.reply_text("Owner Options:", reply_markup=owner_main_keyboard())
             return
-
-    # ... (rest of function)
 
         # Add input to the owner's batch queue
         OWNER_QUEUE.append(msg.text)
@@ -1526,8 +1523,7 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Sent successfully to: {success_count} users\n"
             f"Failed: {fail_count} users",
             reply_markup=updates_keyboard()
-)
-        
+        )
         return
 
     # =========================
@@ -1657,12 +1653,43 @@ async def process_user_article(notes: str, context: ContextTypes.DEFAULT_TYPE, u
     result = await asyncio.to_thread(generate_content, notes, mode, count, user_id)
     result = result.replace("\r", "")
 
-    if "SUMMARY:" in result:
-        rest = result.split("SUMMARY:", 1)[1]
-    else:
-        rest = result
+    # Standardize/Normalize headers from the response to prevent markdown bold characters interfering with Regex split
+    normalized_result = re.sub(r'(?i)\*?\*?(TITLE|SUMMARY|MCQ\d+)\*?\*?:\*?\*?', lambda m: f"{m.group(1).upper()}:", result)
 
-    blocks = re.split(r'(?i)MCQ\d+\s*:', rest)
+    # Extract TITLE and SUMMARY details
+    title = ""
+    summary = ""
+
+    title_match = re.search(r'TITLE:\s*(.*?)(?=\s*SUMMARY:|\s*MCQ\d+:|$)', normalized_result, re.DOTALL)
+    if title_match:
+        title = title_match.group(1).strip()
+        
+    summary_match = re.search(r'SUMMARY:\s*(.*?)(?=\s*MCQ\d+:|$)', normalized_result, re.DOTALL)
+    if summary_match:
+        summary = summary_match.group(1).strip()
+
+    # Deliver Title & Spoiler-tagged Summary before sending out the quiz blocks
+    if title or summary:
+        msg_text = ""
+        if title:
+            msg_text += f"<b>📰 {title}</b>\n\n"
+        if summary:
+            msg_text += f"<tg-spoiler>{summary}</tg-spoiler>\n"
+        
+        if msg_text.strip():
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=msg_text.strip(),
+                parse_mode="HTML"
+            )
+
+    # Retain standard parsing blocks for multiple choice questions
+    if "SUMMARY:" in normalized_result:
+        rest = normalized_result.split("SUMMARY:", 1)[1]
+    else:
+        rest = normalized_result
+
+    blocks = re.split(r'MCQ\d+\s*:', rest)
     mcq_blocks = blocks[1:][:count]
 
     sent_any = False
