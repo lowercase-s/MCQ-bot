@@ -1420,14 +1420,11 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global BATCH_MODE, OWNER_QUEUE, USER_BATCHES, USER_MODE
 
     # =========================
-    # Owner Batch Mode: Send Daily MCQs
-    # =========================
+# Owner Batch Mode: Send Daily MCQs
+# =========================
     if USER_STATE.get(OWNER_ID) == "owner_batch":
         if msg.text == "❌ Cancel":
-            BATCH_MODE = False
-            OWNER_QUEUE.clear()
-            USER_STATE[OWNER_ID] = "main"
-            await msg.reply_text("❌ Batch cancelled. Queue cleared.", reply_markup=owner_main_keyboard())
+            # ... (rest of your existing cancel code)
             return
 
         if msg.text == "✅ Process & Post MCQs":
@@ -1442,8 +1439,12 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Step 2: Process batch articles sequentially
             await processing_msg.edit_text(f"🚀 Processing {len(OWNER_QUEUE)} article(s) and posting polls...")
+            
             for idx, article in enumerate(OWNER_QUEUE, start=1):
-                await process_article(article, context)
+                # --- FIX HERE ---
+                # Pass GROUP_CHAT_ID (or OWNER_ID if you intended to test first) 
+                # and the mode. Assuming you want to post to the Group:
+                await process_user_article(article, context, user_id=int(GROUP_CHAT_ID), mode="upsc")
 
             # Cleanup
             OWNER_QUEUE.clear()
@@ -1452,6 +1453,8 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await processing_msg.edit_text("✅ Daily Update and associated MCQs have been published successfully!")
             await msg.reply_text("Owner Options:", reply_markup=owner_main_keyboard())
             return
+
+    # ... (rest of function)
 
         # Add input to the owner's batch queue
         OWNER_QUEUE.append(msg.text)
