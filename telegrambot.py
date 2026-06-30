@@ -930,7 +930,8 @@ async def trigger_daily_challenge(update: Update, context: ContextTypes.DEFAULT_
     prev_poll_count = USER_POLL_COUNT.get(user_id, 2)
     USER_POLL_COUNT[user_id] = 10
     
-    await process_user_article("Daily Challenge Mix", context, user_id, mode="quiz", is_daily_challenge=True)
+    # We suppress the article synopsis/explanation for the Daily Challenge
+    await process_user_article("Daily Challenge Mix", context, user_id, mode="quiz", is_daily_challenge=True, show_article=False)
     
     USER_POLL_COUNT[user_id] = prev_poll_count
 
@@ -1095,8 +1096,8 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prev_poll_count = USER_POLL_COUNT.get(user_id, 2)
             USER_POLL_COUNT[user_id] = 10
             
-            # Execute user poll generation with dynamically specified mode
-            await process_user_article(text, context, user_id, mode=mode_to_use)
+            # We suppress the article synopsis/explanation for Subject quizzes (show_article=False)
+            await process_user_article(text, context, user_id, mode=mode_to_use, show_article=False)
             
             USER_DAILY_USAGE[user_id]["count"] += 1
             USER_POLL_COUNT[user_id] = prev_poll_count  # Restore preference
@@ -1644,8 +1645,101 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("Failed to delete temp message in start:", e)
 
 
-async def process_user_article(notes: str, context: ContextTypes.DEFAULT_TYPE, user_id: int, mode: str = "upsc", is_daily_challenge: bool = False):
-    await context.bot.send_message(chat_id=user_id, text="⏳ Processing article...")
+# =========================
+# CALLBACK QUERY HANDLER
+# =========================
+
+async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Processes interactive inline button actions."""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    data = query.data
+    ensure_user(user_id)
+    is_owner_user = (user_id == OWNER_ID and OWNER_USER_MODE_ACTIVE)
+
+    if data == "start_daily_challenge":
+        # Initiates daily challenge when triggered via reminder inline button
+        await trigger_daily_challenge(update, context, query.message, user_id)
+
+    elif data == "help":
+        USER_STATE[user_id] = "help"
+        await query.message.edit_text(
+            HELP_TEXT,
+            parse_mode="HTML",
+            reply_markup=help_inline()
+        )
+
+    elif data == "back_main":
+        USER_STATE[user_id] = "owner_user_mode" if is_owner_user else "main"
+        await query.message.edit_text(
+            WELCOME_TEXT,
+            parse_mode="HTML",
+            reply_markup=main_keyboard(is_owner_user_mode=is_owner_user)
+        )
+
+    elif data.startswith("pollcount_"):
+        # Format: pollcount_parent_count (e.g., pollcount_upsc_5, pollcount_quiz_10)
+        parts = data.split("_")
+        if len(parts) == 3:
+            parent = parts[1]
+            count = int(parts[2])
+            USER_POLL_COUNT[user_id] = count
+            USER_MODE[user_id] = "single"
+            USER_STATE[user_id] = f"{parent}_single"
+            await query.message.reply_text(
+                f"📝 Mode set to generate {count} MCQs.\n\n"
+                "Please send the topic, article, or notes to generate MCQs from:",
+                reply_markup=single_keyboard()
+            )
+
+    elif data == "cancel_all":
+        USER_MODE[user_id] = "normal"
+        USER_STATE[user_id] = "owner_user_mode" if is_owner_user else "main"
+        USER_BATCHES[user_id] = []
+        await query.message.reply_text(
+            "❌ Cancelled.",
+            reply_markup=main_keyboard(is_owner_user_mode=is_owner_user)
+        )
+
+    elif data == "process_batch":
+        state = USER_STATE.get(user_id, "")
+        parent = "upsc" if "upsc" in state else "quiz"
+        count = len(USER_BATCHES.get(user_id, []))
+        if count == 0:
+            await query.message.reply_text("❌ No articles were added yet.")
+            return
+
+        USER_MODE[user_id] = "normal"
+        await query.message.reply_text(f"🚀 Processing {count} article(s)...")
+
+        for article in USER_BATCHES[user_id]:
+            await process_user_article(article, context, user_id, mode=parent)
+
+        USER_DAILY_USAGE[user_id]["count"] += count
+        USER_BATCHES[user_id].clear()
+
+        remaining = 10 - USER_DAILY_USAGE[user_id]["count"]
+        USER_STATE[user_id] = "owner_user_mode" if is_owner_user else "main"
+
+        await query.message.reply_text(
+            f"✅ Batch completed!\n\n"
+            f"📊 Today's usage: {USER_DAILY_USAGE[user_id]['count']}/10 articles\n"
+            f"📌 Remaining today: {remaining}",
+            reply_markup=main_keyboard(is_owner_user_mode=is_owner_user)
+        )
+
+
+async def process_user_article(
+    notes: str, 
+    context: ContextTypes.DEFAULT_TYPE, 
+    user_id: int, 
+    mode: str = "upsc", 
+    is_daily_challenge: bool = False,
+    show_article: bool = False
+):
+    await context.bot.send_message(chat_id=user_id, text="⏳ ...")
     ensure_user(user_id)
     count = USER_POLL_COUNT.get(user_id, 2)
 
@@ -1669,7 +1763,8 @@ async def process_user_article(notes: str, context: ContextTypes.DEFAULT_TYPE, u
         summary = summary_match.group(1).strip()
 
     # Deliver Title & Spoiler-tagged Summary before sending out the quiz blocks
-    if title or summary:
+    # ONLY send the article details if show_article is True (which is False for Subject Quiz & Daily Challenge)
+    if show_article and (title or summary):
         msg_text = ""
         if title:
             msg_text += f"<b>📰 {title}</b>\n\n"
@@ -1876,6 +1971,7 @@ def main():
     app.add_handler(CommandHandler("delete", delete_broadcast))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
     app.add_handler(PollAnswerHandler(handle_poll_answer))
+    app.add_handler(CallbackQueryHandler(handle_callback_query))  # Added CallbackQueryHandler
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_notes))
     app.add_handler(CommandHandler("start", start))
 
