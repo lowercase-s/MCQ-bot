@@ -1268,7 +1268,7 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"🚀 Processing {count} article(s)...")
 
             for article in USER_BATCHES[user_id]:
-                await process_user_article(article, context, user_id, mode=parent)
+                await process_user_article(article, context, user_id, mode=parent, show_article=True)
 
             USER_DAILY_USAGE[user_id]["count"] += count
             USER_BATCHES[user_id].clear()
@@ -1338,7 +1338,7 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text("❌ Daily limit reached.\n\nYou can generate only 10 articles per day.")
             return
 
-        await process_user_article(text, context, user_id, mode=parent)
+        await process_user_article(text, context, user_id, mode=parent, show_article=True)
         USER_DAILY_USAGE[user_id]["count"] += 1
 
         USER_MODE[user_id] = "normal"
@@ -1444,7 +1444,7 @@ async def receive_notes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await processing_msg.edit_text(f"🚀 Processing {len(OWNER_QUEUE)} article(s) and posting polls...")
             
             for idx, article in enumerate(OWNER_QUEUE, start=1):
-                await process_user_article(article, context, user_id=int(GROUP_CHAT_ID), mode="upsc")
+                await process_user_article(article, context, user_id=int(GROUP_CHAT_ID), mode="upsc", show_article=True)
 
             # Cleanup
             OWNER_QUEUE.clear()
@@ -1715,7 +1715,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await query.message.reply_text(f"🚀 Processing {count} article(s)...")
 
         for article in USER_BATCHES[user_id]:
-            await process_user_article(article, context, user_id, mode=parent)
+            await process_user_article(article, context, user_id, mode=parent, show_article=True)
 
         USER_DAILY_USAGE[user_id]["count"] += count
         USER_BATCHES[user_id].clear()
@@ -1737,14 +1737,29 @@ async def process_user_article(
     user_id: int, 
     mode: str = "upsc", 
     is_daily_challenge: bool = False,
-    show_article: bool = False
+    show_article: bool = True  # Changed default to True to display synopsis appropriately
 ):
-    await context.bot.send_message(chat_id=user_id, text="⏳ ...")
+    # Only send the hour glass "⏳ ..." message in private chats (user_id > 0)
+    if user_id > 0:
+        await context.bot.send_message(chat_id=user_id, text="⏳ ...")
     ensure_user(user_id)
     count = USER_POLL_COUNT.get(user_id, 2)
 
+    # Check for user-specified title (e.g., "Title: PM visit to France")
+    custom_title = None
+    title_prefix_match = re.search(r'^\s*(?:Title|TITLE|title)\s*:\s*(.*?)(?:\n|$)', notes)
+    if title_prefix_match:
+        custom_title = title_prefix_match.group(1).strip()
+        custom_title = custom_title.strip("\"'")
+        # Escape HTML characters to prevent message rendering failures
+        custom_title = custom_title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        # Extract notes content excluding the Title line
+        cleaned_notes = notes[title_prefix_match.end():].strip()
+    else:
+        cleaned_notes = notes
+
     # Pass user_id to restrict questions by attempted list history
-    result = await asyncio.to_thread(generate_content, notes, mode, count, user_id)
+    result = await asyncio.to_thread(generate_content, cleaned_notes, mode, count, user_id)
     result = result.replace("\r", "")
 
     # Standardize/Normalize headers from the response to prevent markdown bold characters interfering with Regex split
@@ -1761,6 +1776,10 @@ async def process_user_article(
     summary_match = re.search(r'SUMMARY:\s*(.*?)(?=\s*MCQ\d+:|$)', normalized_result, re.DOTALL)
     if summary_match:
         summary = summary_match.group(1).strip()
+
+    # Override title if a custom title was provided
+    if custom_title:
+        title = custom_title
 
     # Deliver Title & Spoiler-tagged Summary before sending out the quiz blocks
     # ONLY send the article details if show_article is True (which is False for Subject Quiz & Daily Challenge)
